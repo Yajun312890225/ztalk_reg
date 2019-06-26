@@ -10,14 +10,17 @@ import (
 	"time"
 	"ztalk_reg/database"
 	"ztalk_reg/utils"
+
+	"github.com/gomodule/redigo/redis"
 )
 
 const key = "006fef6cce9e2900d49f906bef179bf1"
 
 //Reg register
 type Reg struct {
-	ut *utils.Ut
-	db *database.DB
+	ut       *utils.Ut
+	db       *database.DB
+	redisCon *redis.Conn
 }
 
 type getveryReq struct {
@@ -94,10 +97,11 @@ type routerRsp struct {
 }
 
 //NewRegister new
-func NewRegister(db *database.DB, ut *utils.Ut) *Reg {
+func NewRegister(db *database.DB, ut *utils.Ut, red *redis.Conn) *Reg {
 	return &Reg{
-		ut: ut,
-		db: db,
+		ut:       ut,
+		db:       db,
+		redisCon: red,
 	}
 }
 
@@ -149,13 +153,12 @@ func (r *Reg) register(w http.ResponseWriter, req *http.Request) {
 		} else {
 
 			var status int
-			query := fmt.Sprintf("SELECT fStatus FROM ttestphone WHERE fPhone='%s'", "+8617600113331")
+			query := fmt.Sprintf("SELECT fStatus FROM ttestphone WHERE fPhone='%s'", data.Phone)
 			err := r.db.QueryOne(query).Scan(&status)
 			if err == nil {
 				//测试号码
 				if status == 0 {
 
-					ret.Code = 1
 					ret.Cc = data.Cc
 					ret.Phone = data.Phone
 
@@ -165,16 +168,23 @@ func (r *Reg) register(w http.ResponseWriter, req *http.Request) {
 					screenH, _ := strconv.Atoi(data.Screenh)
 					screenW, _ := strconv.Atoi(data.Screenw)
 					source, _ := strconv.Atoi(data.Source)
-					insert := fmt.Sprintf("INSERT INTO tuser (fPhone,fCc,fPassword ,fScode,fImei,fImsi,fOs,fCompany ,fModel,fScreenH,fScreenW,fSource,fSourceUuid,fCreateTime,fLastTime) VALUES('%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d,%d,'%s',FROM_UNIXTIME(%d),FROM_UNIXTIME(%d))",
-						data.Phone, data.Cc, password, data.Scode, data.Imei, data.Imsi, data.Os, data.Company, data.Model, screenH, screenW, source, data.Sourceuuid, time.Now().Unix(), time.Now().Unix())
-					//fmt.Println(insert)
-					if ok := r.db.UpdateData(insert); ok == false {
-						log.Println("already register")
-						update := fmt.Sprintf("UPDATE tuser SET fPassword = '%s' ,fLastTime = FROM_UNIXTIME(%d) WHERE fPhone = '%s'", password, time.Now().Unix(), data.Phone)
-						ok = r.db.UpdateData(update)
-						if ok == false {
-							log.Println("register error")
+					insert := fmt.Sprintf("INSERT INTO tuser (fPhone,fCc,fPassword ,fScode,fImei,fImsi,fOs,fCompany ,fModel,fScreenH,fScreenW,fSource,fSourceUuid,fCreateTime,fLastTime) VALUES('%s','%s','%s','%s','%s','%s','%s','%s','%s',%d,%d,%d,'%s',FROM_UNIXTIME(%d),FROM_UNIXTIME(%d)) ON DUPLICATE KEY UPDATE fPassword = '%s' ,fLastTime = FROM_UNIXTIME(%d)",
+						data.Phone, data.Cc, password, data.Scode, data.Imei, data.Imsi, data.Os, data.Company, data.Model, screenH, screenW, source, data.Sourceuuid, time.Now().Unix(), time.Now().Unix(), password, time.Now().Unix())
+					if ok := r.db.UpdateData(insert); ok {
+						ret.Code = 1
+						var userID int
+						e := fmt.Sprintf("SELECT fUserId FROM tuser WHERE fPhone='%s'", data.Phone)
+						if err := r.db.QueryOne(e).Scan(&userID); err == nil {
+							_, err := (*r.redisCon).Do("HMSET", "ZU_$phone", "userid", userID, "cc", data.Cc, "phone", data.Phone, "scode", data.Scode, "lgid", data.Lg, "source", data.Source, "sourceuuid", data.Sourceuuid, "passwd", password, "nonce", "")
+							if err != nil {
+								fmt.Println("redis mset error:", err)
+							}
 						}
+
+					} else {
+						ret.Code = 0
+						ret.Desc = "sql error"
+						log.Println("register error")
 					}
 				} else {
 

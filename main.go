@@ -10,7 +10,8 @@ import (
 
 var db = database.NewDB()
 var ut = utils.NewUtils()
-var reg = register.NewRegister(db, ut)
+var redisConn = database.NewRedis()
+var reg = register.NewRegister(db, ut, redisConn)
 
 func main() {
 
