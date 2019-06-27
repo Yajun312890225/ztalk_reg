@@ -175,7 +175,7 @@ func (r *Reg) register(w http.ResponseWriter, req *http.Request) {
 						var userID int
 						e := fmt.Sprintf("SELECT fUserId FROM tuser WHERE fPhone='%s'", data.Phone)
 						if err := r.db.QueryOne(e).Scan(&userID); err == nil {
-							_, err := (*r.redisCon).Do("HMSET", "ZU_$phone", "userid", userID, "cc", data.Cc, "phone", data.Phone, "scode", data.Scode, "lgid", data.Lg, "source", data.Source, "sourceuuid", data.Sourceuuid, "passwd", password, "nonce", "")
+							_, err := (*r.redisCon).Do("HMSET", "ZU_"+data.Phone, "userid", userID, "cc", data.Cc, "phone", data.Phone, "scode", data.Scode, "lgid", data.Lg, "source", data.Source, "sourceuuid", data.Sourceuuid, "passwd", password, "nonce", "")
 							if err != nil {
 								fmt.Println("redis mset error:", err)
 							}
